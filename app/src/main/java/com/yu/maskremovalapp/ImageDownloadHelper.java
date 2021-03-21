@@ -17,7 +17,7 @@ public class ImageDownloadHelper extends AsyncTask<String, Void, Bitmap> {
     }
 
     protected Bitmap doInBackground(String... urls) {
-        String urldisplay = SERVER_URL + "target_image.jpg";
+        String urldisplay = SERVER_URL + "faceDetection/output/image/image.jpg";
         Bitmap mIcon11 = null;
         try {
             InputStream in = new java.net.URL(urldisplay).openStream();

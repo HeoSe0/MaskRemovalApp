@@ -2,10 +2,15 @@ package com.yu.maskremovalapp;
 
 import android.Manifest;
 import android.app.ProgressDialog;
+import android.content.ContentResolver;
+import android.content.ContentValues;
 import android.content.Intent;
+import android.content.res.Resources;
 import android.database.Cursor;
 import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
 import android.net.Uri;
+import android.os.AsyncTask;
 import android.os.Bundle;
 import android.os.Environment;
 import android.provider.DocumentsContract;
@@ -14,6 +19,7 @@ import android.util.Log;
 import android.view.View;
 import android.widget.Button;
 import android.widget.ImageView;
+import android.widget.LinearLayout;
 import android.widget.TextView;
 import android.widget.Toast;
 
@@ -21,11 +27,16 @@ import androidx.annotation.Nullable;
 import androidx.appcompat.app.AlertDialog;
 import androidx.appcompat.app.AppCompatActivity;
 
+import java.io.BufferedOutputStream;
+import java.io.ByteArrayOutputStream;
 import java.io.DataOutputStream;
 import java.io.File;
 import java.io.FileInputStream;
 
+import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
+import java.io.IOException;
+import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.MalformedURLException;
 import java.net.URL;
@@ -43,11 +54,15 @@ public class SelectPictureActivity extends AppCompatActivity {
     private ImageView selectedImage;
     private Button reselectButton;
     private Button confirmButton;
+    private Button saveButton;
 
     private ProgressDialog dialog = null;
     private TextView messageText;
 
     private static String imagePath;
+    private static String processedFileName;
+
+    private static Bitmap processedImage = null;
 
     @Override
     protected void onActivityResult(int requestCode, int resultCode, @Nullable Intent data) {
@@ -102,6 +117,24 @@ public class SelectPictureActivity extends AppCompatActivity {
         byte[] buffer;
         int maxBufferSize = 1024 * 1024;
         File sourceFile = new File(sourceFileUri);
+
+        Bitmap temp = BitmapFactory.decodeFile(sourceFileUri);
+        Log.d("IMAGE PIXEL", ""+temp.getHeight());
+
+//        try {
+//            // Convert bitmap to byte array
+//            ByteArrayOutputStream bos = new ByteArrayOutputStream();
+//            temp.compress(Bitmap.CompressFormat.JPEG, 10, bos);
+//            byte[] bitmapdata = bos.toByteArray();
+//
+//            // write the bytes in file
+//            FileOutputStream fos = new FileOutputStream(sourceFile);
+//            fos.write(bitmapdata);
+//            fos.flush();
+//            fos.close();
+//        } catch (IOException e) {
+//            e.printStackTrace();
+//        }
 
         if (!sourceFile.isFile()) {
 
@@ -251,50 +284,108 @@ public class SelectPictureActivity extends AppCompatActivity {
             @Override
             public void onClick(View v) {
                 dialog = ProgressDialog.show(SelectPictureActivity.this, "", "처리중입니다.", true);
-                new Thread(new Runnable() {
+                Thread processThread = new Thread() {
                     public void run() {
-                        runOnUiThread(new Runnable() {
-                            public void run() {
-                            }
-                        });
                         uploadFile(imagePath);
+                        try {
+                            processedImage = new ImageDownloadHelper(selectedImage).execute().get();
+                        } catch (Exception e) {
+                            e.printStackTrace();
+                        }
                     }
-                }).start();
-                new ImageDownloadHelper(selectedImage).execute();
+                };
+                processThread.start();
+                // 처리시 저장 버튼이 보이도록 설정
+                saveButton.setVisibility(View.VISIBLE);
+            }
+        });
 
+        saveButton = findViewById(R.id.save_button);
+        saveButton.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
                 // 이미지 이름에 들어갈 현재시간
                 long now = System.currentTimeMillis();
                 Date date = new Date(now);
                 SimpleDateFormat simpleDateFormat = new SimpleDateFormat("yy_MM_dd_HH_mm_ss");
-                String fileName = "RM_" + simpleDateFormat.format(date);
+                processedFileName = "RM_" + simpleDateFormat.format(date);
 
-                // 저장 권한문제 해결 필요..
-//                saveImage(selectedImage, fileName);
+                new SaveImageTask().execute(processedImage);
             }
         });
     }
 
-    private void saveImage(View v, String filename){
+    //출처 - https://codeday.me/ko/qa/20190310/39556.html
+    /**
+     * A copy of the Android internals  insertImage method, this method populates the
+     * meta data with DATE_ADDED and DATE_TAKEN. This fixes a common problem where media
+     * that is inserted manually gets saved at the end of the gallery (because date is not populated).
+     * @see android.provider.MediaStore.Images.Media#insertImage(ContentResolver, Bitmap, String, String)
+     */
+    public static final String insertImage(ContentResolver cr,
+                                           Bitmap source,
+                                           String title,
+                                           String description) {
 
-        String storagePath =
-                Environment.getExternalStorageDirectory().getAbsolutePath();
-        Log.i("STORAGE PATH", storagePath);
-        String savePath = storagePath + "/Mask_Removal";
-        File f = new File(savePath);
+        ContentValues values = new ContentValues();
+        values.put(MediaStore.Images.Media.TITLE, title);
+        values.put(MediaStore.Images.Media.DISPLAY_NAME, title);
+        values.put(MediaStore.Images.Media.DESCRIPTION, description);
+        values.put(MediaStore.Images.Media.MIME_TYPE, "image/jpeg");
+        // Add the date meta data to ensure the image is added at the front of the gallery
+        values.put(MediaStore.Images.Media.DATE_ADDED, System.currentTimeMillis());
+        values.put(MediaStore.Images.Media.DATE_TAKEN, System.currentTimeMillis());
 
-        // 권한문제 해결 필요.. mkdirs가 작동안함
+        Uri url = null;
+        String stringUrl = null;    /* value to be returned */
 
-        if (!f.isDirectory())f.mkdirs();
+        try {
+            url = cr.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values);
 
-        v.buildDrawingCache();
-        Bitmap bitmap = v.getDrawingCache();
-        FileOutputStream fos;
-        try{
-            fos = new FileOutputStream(savePath+"/"+filename);
-            bitmap.compress(Bitmap.CompressFormat.JPEG,100,fos);
+            if (source != null) {
+                OutputStream imageOut = cr.openOutputStream(url);
+                try {
+                    source.compress(Bitmap.CompressFormat.JPEG, 50, imageOut);
+                } finally {
+                    imageOut.close();
+                }
 
-        }catch (Exception e){
-            e.printStackTrace();
+            } else {
+                cr.delete(url, null, null);
+                url = null;
+            }
+        } catch (Exception e) {
+            if (url != null) {
+                cr.delete(url, null, null);
+                url = null;
+            }
         }
+
+        if (url != null) {
+            stringUrl = url.toString();
+        }
+
+        return stringUrl;
+    }
+
+    private class SaveImageTask extends AsyncTask<Bitmap, Void, Void> {
+
+        @Override
+        protected void onPostExecute(Void aVoid) {
+            super.onPostExecute(aVoid);
+
+            Toast.makeText(SelectPictureActivity.this, "사진을 저장하였습니다.", Toast.LENGTH_SHORT).show();
+        }
+
+        @Override
+        protected Void doInBackground(Bitmap... data) {
+
+            Bitmap bitmap = null;
+            bitmap = data[0];
+            insertImage(getContentResolver(), bitmap, processedFileName, "");
+
+            return null;
+        }
+
     }
 }
