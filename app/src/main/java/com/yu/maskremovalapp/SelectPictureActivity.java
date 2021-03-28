@@ -107,7 +107,6 @@ public class SelectPictureActivity extends AppCompatActivity {
 
 
         String fileName = sourceFileUri;
-
         HttpURLConnection conn = null;
         DataOutputStream dos = null;
         String lineEnd = "\r\n";
@@ -118,30 +117,12 @@ public class SelectPictureActivity extends AppCompatActivity {
         int maxBufferSize = 1024 * 1024;
         File sourceFile = new File(sourceFileUri);
 
-        Bitmap temp = BitmapFactory.decodeFile(sourceFileUri);
-        Log.d("IMAGE PIXEL", ""+temp.getHeight());
-
-//        try {
-//            // Convert bitmap to byte array
-//            ByteArrayOutputStream bos = new ByteArrayOutputStream();
-//            temp.compress(Bitmap.CompressFormat.JPEG, 10, bos);
-//            byte[] bitmapdata = bos.toByteArray();
-//
-//            // write the bytes in file
-//            FileOutputStream fos = new FileOutputStream(sourceFile);
-//            fos.write(bitmapdata);
-//            fos.flush();
-//            fos.close();
-//        } catch (IOException e) {
-//            e.printStackTrace();
-//        }
-
         if (!sourceFile.isFile()) {
 
             dialog.dismiss();
 
             Log.e("uploadFile", "Source File not exist :" + sourceFileUri);
-
+            
             runOnUiThread(new Runnable() {
                 public void run() {
                     messageText.setText("Source File not exist :" + sourceFileUri);
